@@ -1,65 +1,97 @@
-version: "3.9"
 services:
-  web:
-    image: localhost:5000/sample-service:latest
-    ports:
-      - "8081:8081"
   gitea:
     image: gitea/gitea:latest
     container_name: gitea
     environment:
       - USER_UID=1000
       - USER_GID=1000
+      - ROOT_URL=http://gitea:3000/
+      - PROTOCOL=http
     volumes:
       - ./gitea/data:/data
     ports:
       - "3000:3000"
       - "222:22"
     restart: unless-stopped
+    networks:
+      - devops-network
+
   woodpecker-server:
     image: woodpeckerci/woodpecker-server:latest
     container_name: woodpecker-server
-    volumes:
-      - ./woodpecker/data:/var/lib/woodpecker
     environment:
       - WOODPECKER_OPEN=true
       - WOODPECKER_GITEA=true
-      - WOODPECKER_GITEA_URL=http://localhost:3000
-      - WOODPECKER_ADMIN=anas1010
+      - WOODPECKER_GITEA_URL=http://gitea:3000
+      - WOODPECKER_HOST=http://localhost:8000
+      - WOODPECKER_ADMIN=devops
       - WOODPECKER_AGENT_SECRET=mysecret
       - WOODPECKER_SERVER_ADDR=:8000
-      - WOODPECKER_HOST=http://localhost:8000
+      - WOODPECKER_GRPC_ADDR=:9000
+      - WOODPECKER_GITEA_CLIENT=2625c758-fba9-427a-b366-9a31030f671f
+      - WOODPECKER_GITEA_SECRET=gto_o5wiq7x33g725sc4edhqury5i7fnqaaqhmw2blzyrsccqsixhl2a
+      - WOODPECKER_BACKEND_DOCKER_VOLUMES=/var/run/docker.sock:/var/run/docker.sock
+    volumes:
+      - ./woodpecker/data:/var/lib/woodpecker
     ports:
       - "8000:8000"
+      - "9000:9000"
     depends_on:
       - gitea
     restart: unless-stopped
+    networks:
+      - devops-network
+
   woodpecker-agent:
     image: woodpeckerci/woodpecker-agent:latest
     container_name: woodpecker-agent
+    privileged: true
     environment:
-      WOODPECKER_SERVER: woodpecker-server:8000
-      WOODPECKER_SERVER_PROTO: http
-      WOODPECKER_AGENT_SECRET: mysecret
+      - WOODPECKER_SERVER=woodpecker-server:9000
+      - WOODPECKER_AGENT_SECRET=mysecret
+      - WOODPECKER_BACKEND=docker
+      - WOODPECKER_BACKEND_DOCKER_VOLUMES=/var/run/docker.sock:/var/run/docker.sock
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - woodpecker-server
     restart: unless-stopped
+    networks:
+      - devops-network
+
+  registry:
+    image: registry:2
+    container_name: registry
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./registry/data:/var/lib/registry
+    restart: unless-stopped
+    networks:
+      - devops-network
+
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:latest
     container_name: prometheus
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
       - "9090:9090"
     restart: unless-stopped
+    networks:
+      - devops-network
 
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana:latest
     container_name: grafana
     ports:
       - "3001:3000"
     restart: unless-stopped
+    networks:
+      - devops-network
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
 
-
+networks:
+  devops-network:
+    driver: bridge
